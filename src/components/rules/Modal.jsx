@@ -1,740 +1,204 @@
-import JSZip from 'jszip';
 import PropTypes from 'prop-types';
-import { useEffect, useRef, useState } from "react";
-import { useDropzone } from "react-dropzone";
-import ColorModal from "../modals/ColorModal";
-import AddModal from "./AddRecord/AddModal";
-import { processJsonFile } from "./jsonHandler";
+import { useEffect, useRef, useState } from 'react';
+import ColorModal from '../modals/ColorModal';
+import AddModal from './AddRecord/AddModal';
+import { assertAsset, maxArchiveBytes, maxAssetBytes } from '../../timer/assets.mjs';
+import { normalizeSessions } from '../../timer/config.mjs';
+import { exportPackage, importPackage } from '../../timer/packages.mjs';
 
-const Modal = ({ isOpen, onClose, setSessions, settings, setSettings }) => {
-  const [jsonFile, setJsonFile] = useState(null);
-  const [data, setData] = useState([]);
-  const [showError, setShowError] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [view, setView] = useState("upload");
-  
-  // State for color picker modal
-  const [isColorModalOpen, setIsColorModalOpen] = useState(false);
-  const [currentColorSetting, setCurrentColorSetting] = useState(null);
-  const [colorModalTitle, setColorModalTitle] = useState("");
-  const containerRef = useRef(null);
-
-  // Load data from localStorage when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      const savedData = localStorage.getItem('debateTimerCustomData');
-      if (savedData) {
-        try {
-          setData(JSON.parse(savedData));
-        } catch (error) {
-          console.error("Error parsing saved data:", error);
-        }
-      }
-    }
-  }, [isOpen]);
-
-  // Save data to localStorage when it changes
-  useEffect(() => {
-    if (data.length > 0) {
-      localStorage.setItem('debateTimerCustomData', JSON.stringify(data));
-    }
-  }, [data]);
-
-  const handleSettingsChange = (field, value) => {
-    setSettings(prev => ({
-      ...prev,
-      [field]: value instanceof File ? URL.createObjectURL(value) : value,
-    }));
-  };
-
-  // Function to open color modal
-  const openColorModal = (field, title) => {
-    setCurrentColorSetting(field);
-    setColorModalTitle(title);
-    setIsColorModalOpen(true);
-  };
-  
-  // Handle color change from ColorModal
-  const handleColorChange = (color) => {
-    if (currentColorSetting) {
-      handleSettingsChange(currentColorSetting, color);
-    }
-  };
-
-  const handleCompletePackageUpload = async (file) => {
-    console.log("Uploaded file:", file);
-    console.log("File type:", file.type);
-    
-    // Check both MIME type and file extension
-    const isZipMimeType = file.type === 'application/zip' || file.type === 'application/x-zip-compressed';
-    const isZipExtension = file.name.toLowerCase().endsWith('.zip');
-    
-    if (!file || (!isZipMimeType && !isZipExtension)) {
-      console.log("File validation failed:", {
-        fileName: file?.name,
-        fileType: file?.type,
-        isZipMimeType,
-        isZipExtension
-      });
-      setShowError(true);
-      setErrorMessage("Please upload a valid ZIP file");
-      return;
-    }
-  
-    try {
-      const zip = new JSZip();
-      const contents = await zip.loadAsync(file);
-      
-      // Process JSON config file
-      const configFile = contents.file("config.json");
-      if (configFile) {
-        const configText = await configFile.async("string");
-        const configData = JSON.parse(configText);
-        
-        // Handle sessions data
-        if (configData.sessions) {
-          setData(configData.sessions);
-          setSessions(configData.sessions);
-          localStorage.setItem('debateTimerCustomData', JSON.stringify(configData.sessions));
-        }
-        
-        // Handle settings if present
-        if (configData.settings) {
-          const newSettings = {...settings};
-          
-          // Only update non-file settings
-          if (configData.settings.positiveColor) 
-            newSettings.positiveColor = configData.settings.positiveColor;
-          if (configData.settings.negativeColor) 
-            newSettings.negativeColor = configData.settings.negativeColor;
-          if (configData.settings.fontStyle) 
-            newSettings.fontStyle = configData.settings.fontStyle;
-          if (configData.settings.customFontFamily)
-            newSettings.customFontFamily = configData.settings.customFontFamily;
-          if (configData.settings.customFontFormat)
-            newSettings.customFontFormat = configData.settings.customFontFormat;
-          
-          setSettings(newSettings);
-        }
-      }
-      
-      // Process cover background
-      const coverImage = contents.file("cover.png") || contents.file("cover.jpg");
-      if (coverImage) {
-        const blob = await coverImage.async("blob");
-        const imageUrl = URL.createObjectURL(blob);
-        if (imageUrl) {
-          setSettings(prev => ({...prev, coverBackground: imageUrl}));
-        }
-      }
-      
-      // Process default background
-      const defaultImage = contents.file("background.png") || contents.file("background.jpg");
-      if (defaultImage) {
-        const blob = await defaultImage.async("blob");
-        const imageUrl = URL.createObjectURL(blob);
-        if (imageUrl) {
-          setSettings(prev => ({...prev, defaultBackground: imageUrl}));
-        }
-      }
-      
-      // Process font files with our improved function
-      try {
-        await processFontFromZip(contents, setSettings);
-      } catch (fontError) {
-        console.error("Font processing error:", fontError);
-        setShowError(true);
-        setErrorMessage("Error loading font: " + fontError.message);
-      }
-      
-      // Show success message
-      setShowError(false);
-      
-    } catch (error) {
-      console.error("Error processing ZIP file:", error);
-      setShowError(true);
-      setErrorMessage("Error processing ZIP file: " + error.message);
-    }
-  };
-
-  // Improved function for processing font files from ZIP
-  const processFontFromZip = async (contents, setSettings) => {
-      // Find all font files in the ZIP
-      const fontFiles = Object.keys(contents.files).filter(path => 
-        /\.(woff2|woff|ttf|otf)$/i.test(path) && !path.startsWith('__MACOSX'));
-      
-      if (fontFiles.length === 0) {
-        console.log("No font files found in ZIP");
-        return;
-      }
-      
-      try {
-        // Get the first font file
-        const fontPath = fontFiles[0];
-        console.log("Processing font file:", fontPath);
-        
-        // Determine font format from file extension
-        const format = fontPath.split('.').pop().toLowerCase();
-        
-        // Get font metadata if available
-        let fontFamily;
-        const metadataFile = contents.file("font-metadata.json");
-        
-        if (metadataFile) {
-          const metadataText = await metadataFile.async("string");
-          const metadata = JSON.parse(metadataText);
-          fontFamily = metadata.family;
-          console.log("Using font family from metadata:", fontFamily);
-        } else {
-          // Generate a unique font family name based on the filename
-          const baseName = fontPath.split('/').pop().split('.')[0];
-          fontFamily = `custom-font-${baseName}-${Date.now()}`;
-          console.log("Generated font family name:", fontFamily);
-        }
-        
-        // Extract font to ArrayBuffer for most reliable loading
-        const fontFile = contents.file(fontPath);
-        const fontArrayBuffer = await fontFile.async("arraybuffer");
-        
-        // Create blob with proper MIME type
-        const mimeTypes = {
-          'woff2': 'font/woff2',
-          'woff': 'font/woff',
-          'ttf': 'font/ttf',
-          'otf': 'font/otf'
-        };
-        
-        const fontBlob = new Blob([fontArrayBuffer], { 
-          type: mimeTypes[format] || 'font/ttf'
-        });
-        
-        // Create a persistent URL
-        const fontUrl = URL.createObjectURL(fontBlob);
-        
-        console.log(`Loading font: family=${fontFamily}, format=${format}, url=${fontUrl}`);
-        
-        // Create a style element to load the font
-        const style = document.createElement('style');
-        style.textContent = `
-          @font-face {
-            font-family: '${fontFamily}';
-            src: url('${fontUrl}') format('${format}');
-            font-weight: normal;
-            font-style: normal;
-          }
-        `;
-        document.head.appendChild(style);
-        
-        // Also load via FontFace API for better compatibility
-        const fontFace = new FontFace(fontFamily, `url(${fontUrl})`);
-        try {
-          const loadedFont = await fontFace.load();
-          document.fonts.add(loadedFont);
-          console.log("Font loaded successfully via FontFace API");
-        } catch (fontError) {
-          console.warn("FontFace API loading failed, falling back to @font-face", fontError);
-        }
-        
-        // Update settings with the loaded font information
-        setSettings(prev => ({
-          ...prev,
-          customFontFamily: fontFamily,
-          customFontUrl: fontUrl,
-          customFontFormat: format
-        }));
-        
-        return true;
-      } catch (error) {
-        console.error("Error processing font:", error);
-        throw error;
-      }
-    };
-
-  const exportCompletePackage = async () => {
-    const zip = new JSZip();
-    
-    // Add JSON config
-    const configData = {
-      sessions: data,
-      settings: {
-        positiveColor: settings.positiveColor,
-        negativeColor: settings.negativeColor,
-        fontStyle: settings.fontStyle,
-        customFontFamily: settings.customFontFamily,
-        customFontFormat: settings.customFontFormat
-      }
-    };
-    zip.file("config.json", JSON.stringify(configData, null, 2));
-    
-    // Add background images if they're loaded
-    if (settings.coverBackground) {
-      try {
-        const coverResponse = await fetch(settings.coverBackground);
-        const coverBlob = await coverResponse.blob();
-        zip.file("cover.png", coverBlob);
-      } catch (error) {
-        console.error("Error adding cover image:", error);
-      }
-    }
-    
-    if (settings.defaultBackground) {
-      try {
-        const bgResponse = await fetch(settings.defaultBackground);
-        const bgBlob = await bgResponse.blob();
-        zip.file("background.png", bgBlob);
-      } catch (error) {
-        console.error("Error adding background image:", error);
-      }
-    }
-    
-    // Add font file if available
-    if (settings.customFontPath || settings.customFontUrl) {
-      try {
-        const fontSource = settings.customFontPath || settings.customFontUrl;
-        console.log("Adding font from source:", fontSource);
-        
-        const fontResponse = await fetch(fontSource);
-        const fontBlob = await fontResponse.blob();
-
-        // Get appropriate filename with extension
-        const format = settings.customFontFormat || 'ttf';
-        
-        // Add font metadata to help with reloading
-        const fontMetadata = {
-          format: format,
-          family: settings.customFontFamily || `custom-font-${Date.now()}`
-        };
-        
-        // Add both the font file and metadata
-        zip.file(`font.${format}`, fontBlob);
-        zip.file("font-metadata.json", JSON.stringify(fontMetadata));
-        
-        console.log(`Added font file and metadata to ZIP`);
-      } catch (error) {
-        console.error("Error adding font file:", error);
-      }
-    }
-    
-    // Generate and download the ZIP file
-    const content = await zip.generateAsync({type: "blob"});
-    const url = URL.createObjectURL(content);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = "debate_timer_config.zip";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-  
-  const onDrop = (acceptedFiles) => {
-    processJsonFile(
-      acceptedFiles,
-      setJsonFile,
-      (loadedData) => {
-        setData(loadedData);
-        setSessions(loadedData); // Update sessions in the App component
-        localStorage.setItem('debateTimerCustomData', JSON.stringify(loadedData));
-      },
-      setShowError,
-      setErrorMessage
-    );
-  };
-
-  const { getRootProps, getInputProps } = useDropzone({ onDrop });
-
-  const handleDragStart = (e, index) => {
-    e.dataTransfer.setData("dragIndex", index);
-  };
-
-  const handleDrop = (e, dropIndex) => {
-    const dragIndex = e.dataTransfer.getData("dragIndex");
-    const items = [...data];
-    const [draggedItem] = items.splice(dragIndex, 1);
-    items.splice(dropIndex, 0, draggedItem);
-    setData(items);
-  };
-
-  const allowDrop = (e) => {
-    e.preventDefault();
-  };
-
-  const handleDelete = (index) => {
-    setData((prevData) => prevData.filter((_, i) => i !== index));
-  };
-
-  const handleSave = () => {
-    // Don't proceed with the save if there's no data
-    if (data.length === 0) {
-      setShowError(true);
-      setErrorMessage("");
-      return;
-    }
-
-    // Preserve all properties in each item, not just the basic ones
-    // This ensures that properties like 'label1' needed by App.jsx are preserved
-    const formattedData = data.map(item => {
-      // First, ensure we have all the required properties with their standard names
-      const formattedItem = {
-        title: item.环节名称 || item.title || "",
-        isDualTimer: item.双方环节 || item.isDualTimer || false,
-        duration: item.时长 || item.duration || 0,
-        // Ensure label1 and other potentially needed properties exist
-        label1: item.label1 || "",
-        label2: item.label2 || "",
-        // Copy any other existing properties
-        ...item
-      };
-      
-      // Standardize property names if they're in Chinese
-      if (item.环节名称) formattedItem.title = item.环节名称;
-      if (item.双方环节 !== undefined) formattedItem.isDualTimer = item.双方环节;
-      if (item.时长) formattedItem.duration = item.时长;
-      
-      return formattedItem;
-    });
-  
-    // Save to localStorage
-    localStorage.setItem('debateTimerSessions', JSON.stringify(formattedData));
-    
-    // Also update the current sessions state
-    setSessions(formattedData);
-    
-    // Export to file if requested
-    const fileName = window.prompt("输入导出文件名:", "data.json");
-    if (fileName) {
-      // Export the full data with all properties
-      const blob = new Blob([JSON.stringify(formattedData, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = fileName || "data.json";
-      a.click();
-      URL.revokeObjectURL(url);
-      
-      // Close modal after successful save
-      onClose();
-    }
-  };
-
-  const handleDrag = (e) => {
-    const container = containerRef.current;
-    if (container) {
-      const { clientY } = e;
-      const { top, bottom } = container.getBoundingClientRect();
-      const scrollSpeed = 2;
-
-      // Scroll up when near the top
-    if (clientY < top + 50) {
-      container.scrollBy(0, -scrollSpeed);
-    }
-
-    // Scroll down when near the bottom
-    if (clientY > bottom - 500) {
-      container.scrollBy(0, scrollSpeed);
-      }
-    }
-  };
-
-  useEffect(() => {
-    const container = containerRef.current;
-
-    if (container) {
-      container.addEventListener('drag', handleDrag);
-
-      return () => {
-        container.removeEventListener('drag', handleDrag);
-      };
-    }
-  }, []);
-
-  const prevDataLengthRef = useRef(data.length);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (container) {
-      // Only scroll if data length increased (new item added)
-      if (data.length > prevDataLengthRef.current) {
-        container.scrollTop = container.scrollHeight;
-      }
-    }
-    // Update previous length reference
-    prevDataLengthRef.current = data.length;
-  }, [data]);
-
-  const handleFontUpload = (file) => {
-    setSettings(prev => ({
-      ...prev,
-      customFontFamily: 'DebateCustom',
-      customFontPath: URL.createObjectURL(file),
-      customFontFormat: file.name.split('.').pop().toLowerCase(),
-    }));
-  };
-
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-gray-800 bg-opacity-50 flex justify-center items-center z-50">
-      <div className="bg-white p-4 rounded-md shadow-md w-11/12 max-w-2xl relative flex flex-col h-[80vh]">
-        <button
-          className="absolute top-2 right-2 text-gray-600"
-          onClick={onClose}
-        >
-          &times;
-        </button>
-        <div className="flex justify-start mb-4">
-          <button
-            className={`px-4 py-2 ${view === "upload" ? "bg-blue-500" : "bg-gray-300"} text-white rounded`}
-            onClick={() => setView("upload")}
-          >
-            设定
-          </button>
-          <button
-            className={`px-4 py-2 ${view === "customize" ? "bg-blue-500" : "bg-gray-300"} text-white rounded ml-2`}
-            onClick={() => setView("customize")}
-          >
-            赛制
-          </button>
-        </div>
-
-        <div
-          ref={containerRef}
-          className="flex-1 overflow-y-auto pb-20"
-          onDragOver={allowDrop}
-        >
-          {view === "upload" && (
-            <div className="space-y-3 ">
-              {/* Section: Upload ZIP Config Package */}
-              <div className="border rounded-lg p-4 shadow-sm">
-                <h3 className="font-bold text-lg mb-2">上传 ZIP 配置包</h3>
-                <p className="text-sm text-gray-600 mb-4">
-                  第一次使用时请自行设置赛制、背景图和字体后再保存为 ZIP 配置包。
-                </p>
-                <input
-                  type="file"
-                  accept=".zip"
-                  className="w-full border rounded p-2"
-                  onChange={(e) => {
-                    const file = e.target.files[0];
-                    if (file) {
-                      handleCompletePackageUpload(file);
-                    }
-                  }}
-                />
-              </div>
-
-              {/* Section: Background Images */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Cover Background */}
-                <div className="border rounded-lg p-4 shadow-sm">
-                  <label className="block font-semibold text-gray-700 mb-2">封面背景</label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="w-full border rounded p-2"
-                    onChange={async (e) => {
-                      const file = e.target.files[0];
-                      if (file) {
-                        await handleSettingsChange("coverBackground", file);
-                      }
-                    }}
-                  />
-                  {settings.coverBackground && (
-                    <img
-                      src={settings.coverBackground}
-                      alt="封面背景预览"
-                      className="mt-3 w-full h-32 object-cover rounded"
-                    />
-                  )}
-                </div>
-
-                {/* Default Background */}
-                <div className="border rounded-lg p-4 shadow-sm">
-                  <label className="block font-semibold text-gray-700 mb-2">默认背景</label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="w-full border rounded p-2"
-                    onChange={async (e) => {
-                      const file = e.target.files[0];
-                      if (file) {
-                        await handleSettingsChange("defaultBackground", file);
-                      }
-                    }}
-                  />
-                  {settings.defaultBackground && (
-                    <img
-                      src={settings.defaultBackground}
-                      alt="默认背景预览"
-                      className="mt-3 w-full h-32 object-cover rounded"
-                    />
-                  )}
-                </div>
-              </div>
-
-              {/* Section: Team Colors */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* Positive Color */}
-                <div className="border rounded-lg p-4 shadow-sm">
-                  <label className="block font-semibold text-gray-700 mb-2">正方颜色</label>
-                  <div className="flex items-center">
-                    <div
-                      className="w-10 h-10 rounded-md border mr-3"
-                      style={{ backgroundColor: settings.positiveColor }}
-                    />
-                    <button
-                      className="px-4 py-2 bg-red-500 text-white rounded"
-                      onClick={() => openColorModal("positiveColor", "正方颜色")}
-                    >
-                      选择颜色
-                    </button>
-                  </div>
-                </div>
-
-                {/* Negative Color */}
-                <div className="border rounded-lg p-4 shadow-sm">
-                  <label className="block font-semibold text-gray-700 mb-2">反方颜色</label>
-                  <div className="flex items-center">
-                    <div
-                      className="w-10 h-10 rounded-md border mr-3"
-                      style={{ backgroundColor: settings.negativeColor }}
-                    />
-                    <button
-                      className="px-4 py-2 bg-red-500 text-white rounded"
-                      onClick={() => openColorModal("negativeColor", "反方颜色")}
-                    >
-                      选择颜色
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Section: Custom Font */}
-              <div className="border rounded-lg p-4 shadow-sm">
-                <label className="block font-semibold text-gray-700 mb-2">自定义字体</label>
-                <div className="flex flex-col md:flex-row md:items-center md:space-x-3 space-y-2 md:space-y-0">
-                  <input
-                    type="file"
-                    accept=".woff,.woff2,.ttf,.otf"
-                    className="border rounded p-2 w-full md:w-auto"
-                    onChange={(e) => {
-                      const file = e.target.files[0];
-                      if (file) {
-                        handleFontUpload(file);
-                      }
-                    }}
-                  />
-                </div>
-
-                <div
-                  className="mt-4 text-xl border rounded p-3 bg-gray-50"
-                  style={{ fontFamily: settings.customFontFamily || "inherit" }}
-                >
-                  预览文字 / Preview Text / 0123456789
-                </div>
-
-                <div className="absolute bottom-0 right-0 bg-white p-4 w-full flex justify-end">
-                <button
-                  className="px-4 py-2 bg-green-500 text-white rounded mr-2"
-                  onClick={exportCompletePackage}
-                >
-                  保存为ZIP
-                </button>
-              </div>
-              </div>
-            </div>
-          )}
-
-          
-
-          {view === "customize" && (
-            <div className="flex-1 overflow-y-auto" ref={containerRef} onDragOver={allowDrop}>
-              {data.length === 0 ? (
-                <div className="text-center p-6 text-gray-500">
-                  暂无环节数据，请添加新的环节或从文件导入
-                </div>
-              ) : (
-                data.map((item, index) => (
-                  <div
-                    key={index}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, index)}
-                    onDragOver={allowDrop}
-                    onDrop={(e) => handleDrop(e, index)}
-                    className="bg-white p-4 mb-2 shadow rounded-md flex items-center justify-between"
-                  >
-                    <div className="flex items-center">
-                      <div className="mr-2 cursor-pointer">&#9776;</div>
-                      <div>
-                        <p>环节名称: {item.title || item.环节名称}</p>
-                        <p>时长: {item.duration || item.时长}秒</p>
-                        <p>双方环节: {(item.isDualTimer || item.双方环节) ? "是" : "否"}</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => handleDelete(index)}
-                      className="ml-4 px-2 py-1 bg-red-500 text-white rounded"
-                    >
-                      删除
-                    </button>
-                  </div>
-                ))
-              )}
-
-              <div className="absolute bottom-0 right-0 bg-white p-4 w-full flex justify-end">
-                <button
-                  className="px-4 py-2 bg-green-500 text-white rounded mr-2"
-                  onClick={() => setIsAddModalOpen(true)}
-                >
-                  新增环节
-                </button>
-              </div>
-            </div>  
-          )}
-
-        </div>
-
-        {isAddModalOpen && (
-          <AddModal setIsModalOpen={setIsAddModalOpen} setData={setData} />
-        )}
-
-        {isColorModalOpen && (
-          <ColorModal
-            isOpen={isColorModalOpen}
-            onClose={() => setIsColorModalOpen(false)}
-            onColorSelect={handleColorChange}
-            title={colorModalTitle}
-            initialColor={currentColorSetting === 'positiveColor' ? settings.positiveColor : settings.negativeColor}
-          />
-        )}
-      </div>
-    </div>
-  );
-};
-
-function getFormat(filename) {
-  if (filename.endsWith('.woff2')) return 'woff2';
-  if (filename.endsWith('.woff')) return 'woff';
-  if (filename.endsWith('.ttf')) return 'truetype';
-  if (filename.endsWith('.otf')) return 'opentype';
-  return 'truetype'; // default
+function encode(bytes) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(new Blob([bytes]));
+  });
 }
 
-function getContentType(format) {
-  switch(format.toLowerCase()) {
-    case 'woff2': return 'font/woff2';
-    case 'woff': return 'font/woff';
-    case 'ttf': return 'font/ttf';
-    case 'otf': return 'font/otf';
-    default: return 'font/ttf';
+function download(name, bytes, type) {
+  const url = URL.createObjectURL(new Blob([bytes], { type }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export default function Modal({ sessions, settings, onApply, onClose }) {
+  const [data, setData] = useState(sessions);
+  const [theme, setTheme] = useState(settings);
+  const [assets, setAssets] = useState({});
+  const [view, setView] = useState('settings');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [colorField, setColorField] = useState(null);
+  const dialog = useRef(null);
+  const dragged = useRef(null);
+  const pending = useRef(false);
+
+  useEffect(() => {
+    dialog.current.showModal();
+  }, []);
+
+  async function run(action) {
+    if (pending.current) return;
+    pending.current = true;
+    setBusy(true);
+    setError('');
+    try {
+      await action();
+    } catch (err) {
+      setError(err.message || '操作失败');
+    } finally {
+      pending.current = false;
+      setBusy(false);
+    }
   }
+
+  function importFile(file) {
+    if (!file) return;
+    run(async () => {
+      if (/\.zip$/i.test(file.name)) {
+        if (file.size > maxArchiveBytes) throw new Error('ZIP 文件过大');
+        const next = await importPackage(await file.arrayBuffer());
+        setData(next.sessions);
+        setTheme(next.settings);
+        setAssets(next.assets);
+      } else {
+        if (file.size > 512 * 1024) throw new Error('JSON 文件过大');
+        setData(normalizeSessions(JSON.parse(await file.text())));
+      }
+      setView('stages');
+    });
+  }
+
+  function upload(field, file) {
+    if (!file) return;
+    run(async () => {
+      if (file.size > maxAssetBytes) throw new Error('图片或字体超过 8 MB');
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      assertAsset(field, bytes);
+      setAssets(old => ({ ...old, [field]: bytes }));
+    });
+  }
+
+  function move(from, to) {
+    if (!Number.isInteger(from) || to < 0 || to >= data.length || from === to) return;
+    setData(items => {
+      const next = [...items];
+      const [item] = next.splice(from, 1);
+      next.splice(to, 0, item);
+      return next;
+    });
+  }
+
+  function apply() {
+    run(async () => {
+      const clean = normalizeSessions(data);
+      const entries = await Promise.all(Object.entries(assets).map(async ([field, bytes]) => [field, await encode(bytes)]));
+      await onApply({ sessions: clean, settings: theme, assets: Object.fromEntries(entries) });
+      onClose();
+    });
+  }
+
+  function saveZip() {
+    run(async () => {
+      const bytes = await exportPackage(data, theme, async field => {
+        if (assets[field]) return assets[field];
+        if (!theme[field]) return;
+        const response = await fetch(theme[field]);
+        if (!response.ok) throw new Error('无法读取配置素材');
+        return new Uint8Array(await response.arrayBuffer());
+      });
+      download('debate_timer_config.zip', bytes, 'application/zip');
+    });
+  }
+
+  return (
+    <dialog ref={dialog} aria-labelledby="setup-title"
+      onCancel={event => { event.preventDefault(); if (!busy) onClose(); }}
+      className="w-11/12 max-w-2xl rounded-md p-4 backdrop:bg-black/50">
+      <div className="flex items-center justify-between gap-2">
+        <h2 id="setup-title" className="text-lg font-bold">比赛设置</h2>
+        <button type="button" aria-label="关闭" disabled={busy} onClick={onClose}>✕</button>
+      </div>
+      <fieldset disabled={busy} className="mt-3 flex flex-col gap-3">
+        <div className="flex flex-wrap gap-3 items-center">
+          <button type="button" aria-pressed={view === 'settings'} onClick={() => setView('settings')} className="rounded bg-slate-100 px-3 py-1">设定</button>
+          <button type="button" aria-pressed={view === 'stages'} onClick={() => setView('stages')} className="rounded bg-slate-100 px-3 py-1">赛制</button>
+          <label className="text-sm">导入 JSON / ZIP
+            <input className="ml-2 max-w-56" type="file" accept=".json,.zip" onChange={event => {
+              importFile(event.target.files[0]);
+              event.target.value = '';
+            }} />
+          </label>
+        </div>
+        <div className="max-h-[55vh] overflow-y-auto p-1">
+          {view === 'settings' ? (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {[
+                ['coverBackground', '封面背景', '.png,.jpg,.jpeg,.gif,.webp'],
+                ['defaultBackground', '默认背景', '.png,.jpg,.jpeg,.gif,.webp'],
+                ['customFontPath', '自定义字体', '.woff,.woff2,.ttf,.otf'],
+              ].map(([field, title, accept]) => (
+                <label key={field} className="flex flex-col gap-2 rounded border p-3">
+                  {title}
+                  <input type="file" accept={accept} onChange={event => upload(field, event.target.files[0])} />
+                  {assets[field] && <span className="text-sm">已选取新文件</span>}
+                </label>
+              ))}
+              {[['positiveColor', '正方颜色'], ['negativeColor', '反方颜色']].map(([field, title]) => (
+                <button type="button" key={field} className="flex items-center gap-2 rounded border p-3" onClick={() => setColorField(field)}>
+                  <span className="size-5 rounded border" style={{ backgroundColor: theme[field] }} />
+                  {title}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <>
+              <ol className="space-y-2">
+                {data.map((item, index) => (
+                  <li key={index} draggable onDragStart={() => { dragged.current = index; }} onDragEnd={() => { dragged.current = null; }}
+                    onDragOver={event => event.preventDefault()} onDrop={event => {
+                      event.preventDefault();
+                      move(dragged.current, index);
+                      dragged.current = null;
+                    }}
+                    className="flex items-center justify-between gap-2 rounded bg-slate-100 p-3">
+                    <span>{item.title} · {item.duration} 秒{item.isDualTimer ? ' · 双方' : ''}</span>
+                    <span className="flex gap-2">
+                      <button type="button" aria-label={`上移 ${item.title}`} disabled={index === 0} onClick={() => move(index, index - 1)}>↑</button>
+                      <button type="button" aria-label={`下移 ${item.title}`} disabled={index === data.length - 1} onClick={() => move(index, index + 1)}>↓</button>
+                      <button type="button" className="text-red-700" onClick={() => setData(items => items.filter((_, i) => i !== index))}>删除</button>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+              <button type="button" className="mt-3 rounded bg-slate-100 px-3 py-1" onClick={() => setAdding(true)}>新增环节</button>
+            </>
+          )}
+        </div>
+        {error && <p role="alert" className="text-red-700">{error}</p>}
+        <div className="flex flex-wrap justify-end gap-2">
+          <button type="button" className="rounded border px-3 py-2" onClick={() => run(() => {
+            download('data.json', JSON.stringify(normalizeSessions(data), null, 2), 'application/json');
+          })}>导出 JSON</button>
+          <button type="button" className="rounded border px-3 py-2" onClick={saveZip}>导出 ZIP</button>
+          <button type="button" className="rounded bg-blue-700 px-3 py-2 text-white" onClick={apply}>应用配置</button>
+        </div>
+      </fieldset>
+      {adding && <AddModal setIsModalOpen={setAdding} setData={setData} />}
+      {colorField && <ColorModal isOpen onClose={() => setColorField(null)} initialColor={theme[colorField]}
+        title={colorField === 'positiveColor' ? '正方颜色' : '反方颜色'}
+        onColorSelect={color => setTheme(old => ({ ...old, [colorField]: color }))} />}
+    </dialog>
+  );
 }
 
 Modal.propTypes = {
-  isOpen: PropTypes.bool.isRequired,
-  onClose: PropTypes.func.isRequired,
-  setSessions: PropTypes.func.isRequired,
+  sessions: PropTypes.array.isRequired,
   settings: PropTypes.object.isRequired,
-  setSettings: PropTypes.func.isRequired,
+  onApply: PropTypes.func.isRequired,
+  onClose: PropTypes.func.isRequired,
 };
-
-export default Modal;

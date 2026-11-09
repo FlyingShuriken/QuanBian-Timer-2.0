@@ -9,17 +9,18 @@ function App() {
   const [match] = useState(() => createMatch(readSavedMatch(key => localStorage.getItem(key))));
   const [state, setState] = useState(() => match.snapshot(0));
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [settings, setSettings] = useState(() => {
-    try {
-      return { ...defaultSettings, ...JSON.parse(localStorage.getItem('debateTimerSettings')) };
-    } catch {
-      return defaultSettings;
-    }
-  });
+  const [settings, setSettings] = useState(defaultSettings);
 
   useEffect(() => {
-    localStorage.setItem('debateTimerSettings', JSON.stringify(settings));
-  }, [settings]);
+    const controller = new AbortController();
+    fetch('/api/config', { signal: controller.signal }).then(response => response.json()).then(config => {
+      if (controller.signal.aborted) return;
+      match.apply(config.sessions);
+      setState(match.snapshot(performance.now()));
+      setSettings(config.settings);
+    }).catch(error => { if (!controller.signal.aborted) console.error(error); });
+    return () => controller.abort();
+  }, [match]);
 
   useEffect(() => {
     if (state.running === null) return;
@@ -52,18 +53,21 @@ function App() {
   return (
     <div>
       <Screen {...state} setIsModalOpen={setIsModalOpen} settings={settings} />
-      <Modal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        setSessions={(sessions) => {
-          match.apply(sessions);
-          setState(match.snapshot(performance.now()));
-          localStorage.setItem('debateTimerSessions', JSON.stringify(match.saved().sessions));
-          localStorage.setItem('debateTimerCurrentIndex', '0');
-        }}
+      {isModalOpen && <Modal
+        sessions={match.saved().sessions}
         settings={settings}
-        setSettings={setSettings}
-      />
+        onClose={() => setIsModalOpen(false)}
+        onApply={async payload => {
+          const response = await fetch('/api/config', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+          });
+          const config = await response.json();
+          if (!response.ok) throw new Error(config.error);
+          match.apply(config.sessions);
+          setState(match.snapshot(performance.now()));
+          setSettings(config.settings);
+        }}
+      />}
     </div>
   );
 }
