@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { normalizeSessions, readSavedMatch, defaultSessions } from '../src/timer/config.mjs';
+import { normalizeSessions, safeIndex, defaultSessions } from '../src/timer/config.mjs';
 import { createMatch } from '../src/timer/match.mjs';
 
 test('supported legacy names normalize, including zero-duration covers', () => {
@@ -16,10 +16,9 @@ test('supported legacy names normalize, including zero-duration covers', () => {
   }
 });
 
-test('bad saved data recovers and an out-of-range cursor resets', () => {
-  assert.deepEqual(readSavedMatch(() => '{bad').sessions, defaultSessions);
-  const saved = { debateTimerSessions: JSON.stringify(defaultSessions), debateTimerCurrentIndex: '9' };
-  assert.equal(readSavedMatch(key => saved[key]).index, 0);
+test('out-of-range or malformed stage cursors reset', () => {
+  assert.equal(safeIndex(9, defaultSessions), 0);
+  assert.equal(safeIndex(NaN, defaultSessions), 0);
 });
 
 test('coaching preserves the saved match, and applying a shorter list resets the cursor', () => {

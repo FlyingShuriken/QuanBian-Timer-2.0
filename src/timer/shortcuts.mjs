@@ -7,6 +7,6 @@ export function matchShortcut(event) {
   if (event.defaultPrevented || event.repeat || event.isComposing ||
       event.altKey || event.ctrlKey || event.metaKey ||
       event.target?.isContentEditable ||
-      event.target?.closest?.('input, textarea, select, button, [role="dialog"]')) return;
+      event.target?.closest?.('input, textarea, select, [role="dialog"]')) return;
   return shortcuts.get(event.key.toLowerCase());
 }

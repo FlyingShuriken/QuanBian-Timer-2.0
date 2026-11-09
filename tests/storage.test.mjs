@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -34,6 +34,8 @@ test('legacy ZIP, host restart, and ZIP re-export preserve images and fonts', as
   assert.throws(() => reopened.apply({ sessions: [], settings: {} }));
   assert.throws(() => reopened.apply({ sessions: defaultSessions, assets: { coverBackground: 'dGVzdA==' } }));
   assert.deepEqual(reopened.read(), applied);
+  writeFileSync(join(root, 'match.json'), '{bad');
+  assert.deepEqual(reopened.read().sessions, defaultSessions);
 });
 
 test('ZIP rejects a file whose actual expanded size exceeds the limit', async () => {

@@ -43,11 +43,15 @@ export function safeIndex(index, sessions) {
   return Number.isInteger(index) && index >= 0 && index < sessions.length ? index : 0;
 }
 
-export function readSavedMatch(read) {
-  try {
-    const sessions = normalizeSessions(JSON.parse(read('debateTimerSessions')));
-    return { sessions, index: safeIndex(Number(read('debateTimerCurrentIndex')), sessions) };
-  } catch {
-    return { sessions: defaultSessions, index: 0 };
+export function appearance(value) {
+  const safe = { ...defaultSettings };
+  for (const key of ['positiveColor', 'negativeColor']) {
+    if (value?.[key] === undefined) continue;
+    if (typeof value[key] !== 'string' || !/^#[a-f\d]{6}$/i.test(value[key])) {
+      throw new Error('队伍颜色必须是六位十六进制颜色');
+    }
+    safe[key] = value[key];
   }
+  if (['font-sans', 'font-serif', 'font-mono'].includes(value?.fontStyle)) safe.fontStyle = value.fontStyle;
+  return safe;
 }

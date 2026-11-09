@@ -9,7 +9,7 @@
     "dev": "node server.mjs --dev",
     "build": "next build",
     "start": "node server.mjs",
-    "lint": "eslint src server.mjs --ext js,jsx,mjs --max-warnings 0",
+    "lint": "eslint src server tests server.mjs --ext js,jsx,mjs --max-warnings 0",
     "test": "node --test"
   },
   "dependencies": {
@@ -19,7 +19,8 @@
     "next": "16.4.5",
     "prop-types": "^15.8.1",
     "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "react-dom": "19.3.1",
+    "ws": "8.22.2"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.19",

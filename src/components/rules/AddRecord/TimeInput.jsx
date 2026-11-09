@@ -6,11 +6,14 @@ const TimeInput = ({ label, name, value, onChange }) => {
       <input
         type="number"
         name={name}
+        id={name}
+        min={0}
+        max={name === "seconds" ? 59 : 1440}
         value={value}
         onChange={onChange}
         className="w-full px-2 py-4 border border-slate-400 rounded text-3xl text-center overflow-hidden"
       />
-      <label className="block mt-1 my-2">{label}</label>
+      <label htmlFor={name} className="block mt-1 my-2">{label}</label>
     </div>
   );
 };

@@ -28,6 +28,7 @@ export default function Modal({ sessions, settings, onApply, onClose }) {
   const [data, setData] = useState(sessions);
   const [theme, setTheme] = useState(settings);
   const [assets, setAssets] = useState({});
+  const [previews, setPreviews] = useState({});
   const [view, setView] = useState('settings');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -40,6 +41,23 @@ export default function Modal({ sessions, settings, onApply, onClose }) {
   useEffect(() => {
     dialog.current.showModal();
   }, []);
+
+  useEffect(() => {
+    const urls = Object.fromEntries(Object.entries(assets).map(([field, bytes]) => [
+      field, URL.createObjectURL(new Blob([bytes])),
+    ]));
+    setPreviews(urls);
+    const source = urls.customFontPath || theme.customFontPath;
+    const font = source && new FontFace('DebatePreview', `url("${source}")`);
+    if (font) {
+      document.fonts.add(font);
+      font.load().catch(() => {});
+    }
+    return () => {
+      if (font) document.fonts.delete(font);
+      for (const url of Object.values(urls)) URL.revokeObjectURL(url);
+    };
+  }, [assets, theme.customFontPath]);
 
   async function run(action) {
     if (pending.current) return;
@@ -146,6 +164,11 @@ export default function Modal({ sessions, settings, onApply, onClose }) {
                   {title}
                   <input type="file" accept={accept} onChange={event => upload(field, event.target.files[0])} />
                   {assets[field] && <span className="text-sm">已选取新文件</span>}
+                  {field === 'customFontPath' ? (
+                    <span style={{ fontFamily: 'DebatePreview, sans-serif' }}>全辩计时器 / 00:00</span>
+                  ) : (
+                    <img src={previews[field] || theme[field]} alt={`${title}预览`} className="h-24 w-full rounded object-cover" />
+                  )}
                 </label>
               ))}
               {[['positiveColor', '正方颜色'], ['negativeColor', '反方颜色']].map(([field, title]) => (

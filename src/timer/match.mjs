@@ -15,7 +15,13 @@ export function createMatch(saved) {
     clock = createClock(stage);
   }
 
+  function navigationIndex(action) {
+    if (coaching) return index;
+    return (index + (action === 'next' ? 1 : -1) + sessions.length) % sessions.length;
+  }
+
   return {
+    navigationIndex,
     command(action, now) {
       if (action === 'coach1' || action === 'coach2') {
         const duration = action === 'coach1' ? 60 : 120;
@@ -24,7 +30,7 @@ export function createMatch(saved) {
       } else if (action === 'previous' || action === 'next') {
         if (coaching) coaching = null;
         else if (sessions.length === 1) return;
-        else index = (index + (action === 'next' ? 1 : -1) + sessions.length) % sessions.length;
+        else index = navigationIndex(action);
         selectStage();
       } else {
         clock.command(action, now);

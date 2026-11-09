@@ -1,6 +1,7 @@
 import PropTypes from "prop-types";
 import { useState } from "react";
 import DurationPicker from "./DurationPicker";
+import { normalizeSessions } from "../../../timer/config.mjs";
 
 const AddModal = ({ setIsModalOpen, setData }) => {
   const [formData, setFormData] = useState({
@@ -8,7 +9,7 @@ const AddModal = ({ setIsModalOpen, setData }) => {
     duration: { minutes: 0, seconds: 0 },
     isDualTimer: false, // Initialize as boolean
   });
-  const [showError, setShowError] = useState(false);
+  const [error, setError] = useState("");
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -28,17 +29,15 @@ const AddModal = ({ setIsModalOpen, setData }) => {
   };
 
   const handleAdd = () => {
-    if (formData.title && formData.duration.minutes !== "" && formData.duration.seconds !== "") {
-      setData((prevData) => [
-        ...prevData,
-        {
-          ...formData,
-          duration: formData.duration.minutes * 60 + formData.duration.seconds,
-        },
-      ]);
+    try {
+      const [stage] = normalizeSessions([{
+        ...formData,
+        duration: formData.duration.minutes * 60 + formData.duration.seconds,
+      }]);
+      setData(prev => [...prev, stage]);
       setIsModalOpen(false);
-    } else {
-      setShowError(true);
+    } catch (err) {
+      setError(err.message);
     }
   };
 
@@ -48,6 +47,7 @@ const AddModal = ({ setIsModalOpen, setData }) => {
         {/* Close button at the top right */}
         <button
           className="absolute top-2 right-2 text-gray-600"
+          aria-label="关闭新增环节"
           onClick={() => setIsModalOpen(false)}
         >
           &times;
@@ -56,10 +56,11 @@ const AddModal = ({ setIsModalOpen, setData }) => {
         <h2 className="text-lg font-bold mb-4">新增环节</h2>
 
         <div className="w-full mb-4">
-          <label className="block mb-2">环节名称</label>
+          <label htmlFor="stage-title" className="block mb-2">环节名称</label>
           <input
             type="text"
             name="title"
+            id="stage-title"
             value={formData.title}
             onChange={handleInputChange}
             className="input w-full border border-slate-400 rounded p-4"
@@ -67,7 +68,7 @@ const AddModal = ({ setIsModalOpen, setData }) => {
         </div>
 
         <div className="w-full mb-4">
-          <label className="block mb-2">
+          <label htmlFor="stage-dual" className="block mb-2">
             双人环节
             <span
               className="ml-2"
@@ -77,7 +78,8 @@ const AddModal = ({ setIsModalOpen, setData }) => {
             </span>
           </label>
           <select
-            name="isDualTimer" // Updated name
+            name="isDualTimer"
+            id="stage-dual"
             value={formData.isDualTimer ? "true" : "false"} // Convert boolean to string for display
             onChange={handleInputChange}
             className="tw-select tw-w-full"
@@ -92,9 +94,9 @@ const AddModal = ({ setIsModalOpen, setData }) => {
           handleInputChange={handleInputChange}
         />
 
-        {showError && <p className="text-red-500">请填写所有必填项</p>}
-        <button className="btn btn-primary" onClick={handleAdd}>
-          Add
+        {error && <p role="alert" className="text-red-700">{error}</p>}
+        <button type="button" className="rounded bg-blue-700 px-3 py-2 text-white" onClick={handleAdd}>
+          添加
         </button>
       </div>
     </div>

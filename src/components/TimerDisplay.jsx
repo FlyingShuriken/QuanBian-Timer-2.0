@@ -1,10 +1,31 @@
-import { Cog6ToothIcon } from '@heroicons/react/24/outline';
+import { useEffect, useState } from 'react';
 import PropTypes from "prop-types";
 import Timer from "./Timer";
 import PauseModal from "./modals/PauseModal";
+import { displayTime, staleAfterMs } from "../timer/display-time.mjs";
 
-function Screen({ session, remainingMs, running, paused, setIsModalOpen, settings }) {
+export default function TimerDisplay({ sample, children }) {
+  const { snapshot, receivedAt } = sample;
+  const { session, running, paused, settings } = snapshot;
+  const [now, setNow] = useState(receivedAt);
+  const { stale, remainingMs } = displayTime(sample, Math.max(now, receivedAt));
   const [primary, secondary = 0] = remainingMs.map(ms => Math.ceil(ms / 1000));
+
+  useEffect(() => {
+    if (stale) return;
+    const remaining = Math.max(0, receivedAt + staleAfterMs - performance.now());
+    const deadline = setTimeout(() => setNow(performance.now()), Math.ceil(remaining) + 1);
+    const tick = running === null ? null : setInterval(() => setNow(performance.now()), 50);
+    return () => { clearTimeout(deadline); clearInterval(tick); };
+  }, [receivedAt, running, stale]);
+
+  useEffect(() => {
+    if (!settings.customFontPath) return;
+    const font = new FontFace('DebateCustom', `url("${settings.customFontPath}")`);
+    document.fonts.add(font);
+    font.load().catch(console.error);
+    return () => { document.fonts.delete(font); };
+  }, [settings.customFontPath]);
 
   // Get title style for non-dual timers
   const getTitleStyle = () => {
@@ -78,12 +99,8 @@ function Screen({ session, remainingMs, running, paused, setIsModalOpen, setting
       }}
     
     >
-      <div className="absolute top-4 right-4">
-        <button aria-label="设定" onClick={() => setIsModalOpen(true)}>
-          <Cog6ToothIcon className="size-8 text-gray-400 hover:text-gray-800" />
-        </button>
-      </div>
-  
+      {children}
+
       {session.title !== "封面" && (
         <>
           <div className="text-center mb-6">
@@ -101,7 +118,7 @@ function Screen({ session, remainingMs, running, paused, setIsModalOpen, setting
               minutes={Math.floor(primary / 60)}
               seconds={primary % 60}
               label={session.isDualTimer ? session.label1 : ""}
-              isActive={running === 0}
+              isActive={!stale && running === 0}
               idleStyle="text-slate-400"
               activeStyle={getTimerActiveStyle(session.isDualTimer ? session.label1 : "")}
               settings={settings}
@@ -113,7 +130,7 @@ function Screen({ session, remainingMs, running, paused, setIsModalOpen, setting
                 minutes={Math.floor(secondary / 60)}
                 seconds={secondary % 60}
                 label={session.label2}
-                isActive={running === 1}
+                isActive={!stale && running === 1}
                 idleStyle="text-slate-400"
                 activeStyle={getTimerActiveStyle(session.label2)}
                 settings={settings}
@@ -125,23 +142,12 @@ function Screen({ session, remainingMs, running, paused, setIsModalOpen, setting
       )}
   
       {paused && <PauseModal isOpen={paused} />}
+      {stale && <div role="status" className="absolute bottom-4 left-4 z-10 rounded bg-black/80 px-3 py-2 text-white">计时连接已中断</div>}
     </div>
   );
 }
 
-Screen.propTypes = {
-  remainingMs: PropTypes.arrayOf(PropTypes.number).isRequired,
-  running: PropTypes.number,
-  paused: PropTypes.bool.isRequired,
-  session: PropTypes.shape({
-    isDualTimer: PropTypes.bool.isRequired,
-    duration: PropTypes.number.isRequired,
-    label1: PropTypes.string,
-    label2: PropTypes.string,
-    title: PropTypes.string.isRequired,
-  }).isRequired,
-  setIsModalOpen: PropTypes.func.isRequired,
-  settings: PropTypes.object.isRequired,
+TimerDisplay.propTypes = {
+  sample: PropTypes.object.isRequired,
+  children: PropTypes.node,
 };
-
-export default Screen;

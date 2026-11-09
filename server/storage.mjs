@@ -1,9 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { assetFields, assetTypes, assertAsset, maxAssetBytes } from '../src/timer/assets.mjs';
-import { defaultSessions, defaultSettings, normalizeSessions, safeIndex } from '../src/timer/config.mjs';
-import { appearance } from '../src/timer/packages.mjs';
+import { appearance, defaultSessions, defaultSettings, normalizeSessions, safeIndex } from '../src/timer/config.mjs';
 
 const assetId = /^[a-f\d]{64}\.(png|jpg|gif|webp|ttf|otf|woff2?)$/;
 const assetPath = '/assets/';
@@ -39,14 +38,18 @@ export function createStorage(root) {
     return settings;
   }
 
-  function write(config) {
-    const temporary = join(root, `match-${randomUUID()}.tmp`);
+  function writeAtomically(destination, bytes) {
+    const temporary = join(root, `write-${randomUUID()}.tmp`);
     try {
-      writeFileSync(temporary, JSON.stringify(config));
-      renameSync(temporary, configPath);
+      writeFileSync(temporary, bytes, { flag: 'wx' });
+      renameSync(temporary, destination);
     } finally {
       rmSync(temporary, { force: true });
     }
+  }
+
+  function write(config) {
+    writeAtomically(configPath, JSON.stringify(config));
     return config;
   }
 
@@ -83,11 +86,8 @@ export function createStorage(root) {
         }
       }
       for (const { id, bytes } of files) {
-        try {
-          writeFileSync(join(assetsDir, id), bytes, { flag: 'wx' });
-        } catch (error) {
-          if (error.code !== 'EEXIST') throw error;
-        }
+        const destination = join(assetsDir, id);
+        if (!existsSync(destination)) writeAtomically(destination, bytes);
       }
       return write({ sessions, settings, index: 0 });
     },

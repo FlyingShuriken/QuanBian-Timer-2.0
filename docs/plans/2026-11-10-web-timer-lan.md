@@ -12,7 +12,7 @@
 
 - One active match and one designated operator, with multiple simultaneous read-only displays. The host, controller, and display are roles. A single computer can fill several roles, or C can host, A can control, and B and other machines can display. The host continues timing when any client disconnects. The OBS uplink is separate from the LAN connection.
 - Preserve the Chinese operator UI, covers, stage order, team labels and colors, keyboard controls, coaching breaks, and existing supported JSON and ZIP formats. Retain the current pause warning and manual timing workflow.
-- Only the host runs Node. The controller opens `http://<HOST-LAN-IP>:3210/` and viewers open `http://<HOST-LAN-IP>:3210/display`. A browser on the host can use `localhost`. Any display can use the URL directly in OBS Browser Source.
+- Only the host runs Node. The controller opens `http://<HOST-LAN-IP>:3210/` and viewers open `http://<HOST-LAN-IP>:3210/display`. Use `localhost` for local-only mode. In LAN mode the host binds to its selected interface, and a controller on the same machine can use the LAN address. Any display can use the URL directly in OBS Browser Source.
 - Hosted access-code pairing, accounts, multiple matches, and automatic LAN discovery are future work. The LAN operator credential authorizes control of the local server. Keep the state snapshot independent of connection setup so a hosted relay can reuse it.
 
 ## Phase 1 — Replace the desktop shell
@@ -70,7 +70,7 @@ The missing preload bridge and duplicate IPC registration leave the runtime in P
 
 - Extract the shared display from `Screen.jsx`. The viewer shows the stage, clocks, cover, theme, and pause state without controls. Serve all presentation assets from the host. Show host connection status and a copyable display URL in the controller. Disable controls when disconnected. If a request is interrupted, refresh authoritative state before accepting another action and avoid replaying commands automatically.
 - Upgrade `/ws/display` as a read-only socket. Send the complete snapshot immediately, on accepted changes and expiry, and in a periodic heartbeat. Include a server instance ID, sequence, stage and clock states, timing reference, and asset URLs. Ignore messages from old connections and use the fresh snapshot after reconnect. Leave operator commands on the HTTP path.
-- Estimate the server's time using a round-trip sample, then render remaining time from the last authoritative snapshot and elapsed local monotonic time. A viewer never advances a stage or starts the other clock independently. Start with a one-second heartbeat and three-second stale threshold. During a short gap B can count down to zero. After the threshold, freeze with a clear disconnected indicator until a fresh snapshot arrives.
+- Estimate the server's time using a round-trip sample, then render remaining time from the last authoritative snapshot and elapsed local monotonic time. A viewer never advances a stage or starts the other clock independently. Start with a one-second heartbeat and three-second stale threshold. During a short gap the display can count down to zero. After the threshold, freeze with a clear disconnected indicator until a fresh snapshot arrives.
 
 **Gate** — Tests verify that multiple viewers get the same authoritative state, viewer messages cannot mutate the match, and one viewer can disconnect and recover without interrupting the others or the controller. Verify stale and restarted-server behavior.
 
@@ -87,3 +87,10 @@ The missing preload bridge and duplicate IPC registration leave the runtime in P
 ## Rollout boundary
 
 Keep one web runtime and one clock authority. Revisit hosted infrastructure when cross-network use is requested. The future access code should pair a viewer to a match session while preserving the same read-only state contract and keeping operator authority separate.
+
+## Execution verification
+
+- Restored the original cover and background from Git history. Their SHA-256 hashes match the old LFS pointers.
+- Clean dependency installation, lint, 11 tests, and the Next.js production build passed. Integration tests exercised real HTTP and WebSocket connections with a controller and independent viewers, including authorization, handoff, reconnect, and restart.
+- In Chrome, the production host was reached at its LAN address. Verified operator login, sample JSON import and Apply, one-stage keyboard navigation, the read-only display, emergency pause propagation, display reload, stale warning on host shutdown, and recovery to the saved stage with a stopped clock after restart.
+- Venue acceptance still requires separate physical computers and OBS. Check the actual network and firewall, OBS canvas rendering, latency, and the effect of disconnecting the venue internet while preserving the LAN.

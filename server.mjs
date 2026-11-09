@@ -1,38 +1,31 @@
 import { createServer } from 'node:http';
+import { networkInterfaces } from 'node:os';
 import next from 'next';
+import { installMatch } from './server/match.mjs';
 import { createStorage } from './server/storage.mjs';
-import { json, readJSON } from './server/http.mjs';
 
 const dev = process.argv.includes('--dev');
-const hostname = '127.0.0.1';
+const lanHost = process.env.TIMER_LAN_HOST;
+if (lanHost && !Object.values(networkInterfaces()).flat().some(
+  address => address?.family === 'IPv4' && !address.internal && address.address === lanHost,
+)) {
+  throw new Error('TIMER_LAN_HOST must be a local LAN IPv4 address');
+}
+if (dev && lanHost) throw new Error('Build the production app before enabling LAN mode');
+
 const port = Number(process.env.PORT || 3210);
-const server = createServer();
+const hostname = lanHost || '127.0.0.1';
+const server = createServer({ requestTimeout: 30000 });
 const app = next({ dev, hostname, port, httpServer: server });
 const storage = createStorage(process.env.TIMER_DATA_DIR || '.data');
 
 await app.prepare();
-const handle = app.getRequestHandler();
-server.on('request', async (req, res) => {
-  try {
-    if (req.url === '/api/config') {
-      if (req.method === 'GET') return json(res, 200, storage.read());
-      if (req.method !== 'POST') return json(res, 405, { error: '无效的请求' });
-      const hosts = [`localhost:${port}`, `127.0.0.1:${port}`];
-      if (!hosts.includes(req.headers.host) || req.headers.origin !== `http://${req.headers.host}`) {
-        return json(res, 403, { error: '请求来源无效' });
-      }
-      return json(res, 200, storage.apply(await readJSON(req, 34 * 1024 * 1024)));
-    }
-    if (req.method === 'GET' && req.url.startsWith('/assets/')) {
-      const asset = storage.readAsset(req.url.slice('/assets/'.length));
-      if (!asset) return json(res, 404, { error: '文件不存在' });
-      res.writeHead(200, { 'Content-Type': asset.type, 'X-Content-Type-Options': 'nosniff' });
-      return res.end(asset.bytes);
-    }
-    return await handle(req, res);
-  } catch (error) {
-    if (!res.headersSent) return json(res, 400, { error: error.message });
-    res.end();
+const timer = installMatch(server, storage, { lanHost, fallback: app.getRequestHandler() });
+server.listen(port, hostname, () => {
+  if (!lanHost) console.log(`Controller: http://localhost:${port}/`);
+  if (lanHost) {
+    console.log(`LAN controller: http://${lanHost}:${port}/`);
+    console.log(`LAN display: http://${lanHost}:${port}/display`);
+    console.log(`Operator credential: ${timer.credential}`);
   }
 });
-server.listen(port, hostname, () => console.log(`http://localhost:${port}`));
