@@ -1,45 +1,21 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import PropTypes from "prop-types";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useTimers } from "../hooks/useTimers";
 import { matchShortcut } from "../timer/shortcuts.mjs";
 import Timer from "./Timer";
 import PauseModal from "./modals/PauseModal";
 
 function Screen({ shortcutsDisabled, session, setIsModalOpen, settings }) {
-  const [isPaused, setIsPaused] = useState(false);
-
-  const {
-    primaryMinutes,
-    primarySeconds,
-    secondaryMinutes,
-    secondarySeconds,
-    isPrimaryRunning,
-    isSecondaryRunning,
-    togglePrimaryTimer,
-    toggleSecondaryTimer,
-    restartTimers,
-    pauseTimers,
-  } = useTimers(session);
+  const { remainingMs, running, paused, command } = useTimers(session);
+  const [primary, secondary = 0] = remainingMs.map(ms => Math.ceil(ms / 1000));
 
   useEffect(() => {
     if (shortcutsDisabled) return;
-    const onKey = (event) => {
-      const action = matchShortcut(event);
-      if (action === 'pause') {
-        pauseTimers();
-        setIsPaused(paused => !paused);
-      } else if (action === 'reset') {
-        restartTimers();
-      } else if (!isPaused && action === 'primary') {
-        togglePrimaryTimer();
-      } else if (!isPaused && action === 'secondary' && session.isDualTimer) {
-        toggleSecondaryTimer();
-      }
-    };
+    const onKey = (event) => command(matchShortcut(event));
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isPaused, pauseTimers, restartTimers, session.isDualTimer, shortcutsDisabled, togglePrimaryTimer, toggleSecondaryTimer]);
+  }, [command, shortcutsDisabled]);
 
   // Get title style for non-dual timers
   const getTitleStyle = () => {
@@ -133,14 +109,10 @@ function Screen({ shortcutsDisabled, session, setIsModalOpen, settings }) {
           <div className="flex justify-center">
             <Timer
               key="Primary"
-              minutes={primaryMinutes}
-              seconds={primarySeconds}
+              minutes={Math.floor(primary / 60)}
+              seconds={primary % 60}
               label={session.isDualTimer ? session.label1 : ""}
-              isActive={
-                session.isDualTimer
-                  ? isPrimaryRunning && !isSecondaryRunning
-                  : isPrimaryRunning
-              }
+              isActive={running === 0}
               idleStyle="text-slate-400"
               activeStyle={getTimerActiveStyle(session.isDualTimer ? session.label1 : "")}
               settings={settings}
@@ -149,10 +121,10 @@ function Screen({ shortcutsDisabled, session, setIsModalOpen, settings }) {
             {session.isDualTimer && (
               <Timer
                 key="Secondary"
-                minutes={secondaryMinutes}
-                seconds={secondarySeconds}
+                minutes={Math.floor(secondary / 60)}
+                seconds={secondary % 60}
                 label={session.label2}
-                isActive={!isPrimaryRunning && isSecondaryRunning}
+                isActive={running === 1}
                 idleStyle="text-slate-400"
                 activeStyle={getTimerActiveStyle(session.label2)}
                 settings={settings}
@@ -163,7 +135,7 @@ function Screen({ shortcutsDisabled, session, setIsModalOpen, settings }) {
         </>
       )}
   
-      {isPaused && <PauseModal isOpen={isPaused} />}
+      {paused && <PauseModal isOpen={paused} />}
     </div>
   );
 }

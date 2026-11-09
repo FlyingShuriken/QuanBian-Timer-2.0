@@ -3,7 +3,6 @@ import PropTypes from "prop-types";
 function Timer({ 
   minutes, 
   seconds, 
-  milliseconds = 0, 
   label, 
   isActive, 
   idleStyle, 
@@ -117,7 +116,6 @@ function Timer({
 Timer.propTypes = {
   minutes: PropTypes.number.isRequired,
   seconds: PropTypes.number.isRequired,
-  milliseconds: PropTypes.number,
   label: PropTypes.string,
   isActive: PropTypes.bool.isRequired,
   idleStyle: PropTypes.string,
