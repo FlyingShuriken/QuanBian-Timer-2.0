@@ -41,68 +41,13 @@ const Modal = ({ isOpen, onClose, setSessions, settings, setSettings }) => {
     }
   }, [data]);
 
-  // Improved file handling logic with better error handling and persistence
-  const handleSettingsChange = async (field, value) => {
-    // For background images or fonts that need to be saved permanently
-    if (field === 'coverBackground' || field === 'defaultBackground' || field === 'customFontPath') {
-      // If value is a File object, process it
-      if (value instanceof File) {
-        try {
-          // Get a permanent URL for the file using Electron's API
-          if (window.electronAPI) {
-            // Create a proper file type identifier
-            const fileType = field;
-            
-            // Use FileReader to read the file data
-            const fileReader = new FileReader();
-            
-            const fileDataPromise = new Promise((resolve) => {
-              fileReader.onload = () => resolve(fileReader.result);
-            });
-            
-            fileReader.readAsDataURL(value);
-            const fileData = await fileDataPromise;
-            
-            // Save file through Electron and get the local file path
-            const filePath = await window.electronAPI.saveFile({
-              fileData,
-              fileName: value.name,
-              fileType: fileType
-            });
-            
-            // Update settings with the saved path
-            if (filePath) {
-              const updatedSettings = { ...settings };
-              updatedSettings[field] = filePath;
-              setSettings(updatedSettings);
-            }
-          } else {
-            // Fallback for web (using object URLs)
-            const fileUrl = URL.createObjectURL(value);
-            setSettings((prev) => ({
-              ...prev,
-              [field]: fileUrl,
-            }));
-          }
-        } catch (error) {
-          console.error(`Error processing ${field}:`, error);
-        }
-      } else {
-        // If it's already a URL, just set it directly
-        setSettings((prev) => ({
-          ...prev,
-          [field]: value,
-        }));
-      }
-    } else {
-      // For other settings, just update directly
-      setSettings((prev) => ({
-        ...prev,
-        [field]: value,
-      }));
-    }
+  const handleSettingsChange = (field, value) => {
+    setSettings(prev => ({
+      ...prev,
+      [field]: value instanceof File ? URL.createObjectURL(value) : value,
+    }));
   };
-  
+
   // Function to open color modal
   const openColorModal = (field, title) => {
     setCurrentColorSetting(field);
@@ -349,23 +294,9 @@ const Modal = ({ isOpen, onClose, setSessions, settings, setSettings }) => {
         const fontSource = settings.customFontPath || settings.customFontUrl;
         console.log("Adding font from source:", fontSource);
         
-        let fontBlob;
-        
-        // Handle different source types
-        if (fontSource.startsWith('blob:') || fontSource.startsWith('data:')) {
-          // For blob URLs or data URLs, fetch directly
-          const fontResponse = await fetch(fontSource);
-          fontBlob = await fontResponse.blob();
-        } else if (window.electronAPI && settings.customFontPath) {
-          // For local file system paths in Electron
-          const fontBuffer = await window.electronAPI.readFile(settings.customFontPath);
-          fontBlob = new Blob([fontBuffer]);
-        } else {
-          // Standard fetch for web URLs
-          const fontResponse = await fetch(fontSource);
-          fontBlob = await fontResponse.blob();
-        }
-        
+        const fontResponse = await fetch(fontSource);
+        const fontBlob = await fontResponse.blob();
+
         // Get appropriate filename with extension
         const format = settings.customFontFormat || 'ttf';
         
@@ -530,96 +461,15 @@ const Modal = ({ isOpen, onClose, setSessions, settings, setSettings }) => {
     prevDataLengthRef.current = data.length;
   }, [data]);
 
-  // Improved font handling with better format detection and error handling
-  const handleFontUpload = async (file) => {
-    try {
-      if (window.electronAPI) {
-        if (!file) {
-          // Use Electron's dialog to select a font file
-          const result = await window.electronAPI.uploadFont();
-          if (result && result.path) {
-            // Update settings with the new font
-            setSettings(prev => ({
-              ...prev,
-              customFontFamily: `custom-font-${result.name.replace(/\.[^/.]+$/, "")}`,
-              customFontPath: result.path
-            }));
-            
-            // Load the font immediately
-            try {
-              const fontFace = new FontFace(`custom-font-${result.name.replace(/\.[^/.]+$/, "")}`, `url(${result.path})`);
-              await fontFace.load();
-              document.fonts.add(fontFace);
-            } catch (fontError) {
-              console.error('Error loading font:', fontError);
-            }
-          }
-        } else {
-          // Process uploaded font file
-          const fileReader = new FileReader();
-          
-          const fileDataPromise = new Promise((resolve) => {
-            fileReader.onload = () => resolve(fileReader.result);
-          });
-          
-          fileReader.readAsDataURL(file);
-          const fileData = await fileDataPromise;
-          
-          // Save file through Electron and get the local file path
-          const fontUrl = await window.electronAPI.saveFile({
-            fileData,
-            fileName: file.name,
-            fileType: 'font'
-          });
-          
-          if (fontUrl) {
-            // Create a consistent font family name based on the filename
-            const fontName = file.name.replace(/\.[^/.]+$/, ""); // Remove extension
-            const fontFamily = `custom-font-${fontName}`;
-            
-            try {
-              // Load the font immediately
-              const fontFace = new FontFace(fontFamily, `url(${fontUrl})`);
-              await fontFace.load();
-              document.fonts.add(fontFace);
-              
-              // Update settings
-              setSettings(prev => ({
-                ...prev,
-                customFontFamily: fontFamily,
-                customFontPath: fontUrl
-              }));
-            } catch (fontError) {
-              console.error('Error loading font:', fontError);
-            }
-          }
-        }
-      } else {
-        // Fallback for web environment
-        if (file) {
-          const fontUrl = URL.createObjectURL(file);
-          const fontFamily = `custom-font-${file.name.replace(/\.[^/.]+$/, "")}`;
-          
-          try {
-            const fontFace = new FontFace(fontFamily, `url(${fontUrl})`);
-            await fontFace.load();
-            document.fonts.add(fontFace);
-            
-            setSettings(prev => ({
-              ...prev,
-              customFontFamily: fontFamily,
-              customFontPath: fontUrl
-            }));
-          } catch (fontError) {
-            console.error('Error loading font:', fontError);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error processing font:', error);
-    }
+  const handleFontUpload = (file) => {
+    setSettings(prev => ({
+      ...prev,
+      customFontFamily: 'DebateCustom',
+      customFontPath: URL.createObjectURL(file),
+      customFontFormat: file.name.split('.').pop().toLowerCase(),
+    }));
   };
-  
+
   if (!isOpen) return null;
 
   return (
@@ -773,14 +623,6 @@ const Modal = ({ isOpen, onClose, setSessions, settings, setSettings }) => {
                       }
                     }}
                   />
-                  {window.electronAPI && (
-                    <button
-                      className="px-4 py-2 bg-blue-500 text-white rounded"
-                      onClick={() => handleFontUpload()}
-                    >
-                      选择文件
-                    </button>
-                  )}
                 </div>
 
                 <div

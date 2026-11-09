@@ -1,4 +1,4 @@
-import { Trash2 } from 'lucide-react';
+import { TrashIcon } from '@heroicons/react/24/outline';
 import PropTypes from 'prop-types';
 import { useEffect, useRef, useState } from 'react';
 
@@ -336,7 +336,7 @@ const ColorModal = ({ isOpen, onClose, onColorSelect, title, initialColor }) => 
                       className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
                       onClick={(e) => deleteColor(color, e)}
                     >
-                      <Trash2 size={12} />
+                      <TrashIcon className="h-3 w-3" />
                     </button>
                   </div>
                 ))
