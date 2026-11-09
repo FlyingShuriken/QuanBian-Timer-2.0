@@ -3,30 +3,12 @@ import { faCog } from '@fortawesome/free-solid-svg-icons';
 import { useEffect, useState } from "react";
 import Screen from "./components/Screen";
 import Modal from "./components/rules/Modal";
+import { matchShortcut } from "./timer/shortcuts.mjs";
 
 // Add the cog icon to the library
 library.add(faCog);
 
-function App() {
-  const config = {
-    primaryTimerToggle: "q",
-    secondaryTimerToggle: "w",
-    restart: "R",
-    pause: "P",
-    previousSession: ",",
-    nextSession: ".",
-  };
-
-  // Initial default session
-  const defaultSessions = [
-    {
-      title: "请选择赛制",
-      isDualTimer: false,
-      duration: 1,
-    }
-  ];
-
-  const specialSessions = {
+const specialSessions = {
     "1": { 
       title: "教练指导", 
       duration: 60, 
@@ -38,6 +20,16 @@ function App() {
       isDualTimer: false 
     }
   };
+
+function App() {
+  // Initial default session
+  const defaultSessions = [
+    {
+      title: "请选择赛制",
+      isDualTimer: false,
+      duration: 1,
+    }
+  ];
 
   // Default settings
   const defaultSettings = {
@@ -132,53 +124,29 @@ function App() {
     
 
     const handleKeyDown = (event) => {
-      if (event.key === "1") {
-        handleSpecialSessionToggle("1");
-      } else if (event.key === "2") {
-        handleSpecialSessionToggle("2");
-      } else if (event.key === config.previousSession || event.key === config.nextSession) {
-        // If you're in special session, revert back to original sessions
+      if (isModalOpen) return;
+      const action = matchShortcut(event);
+      if (action === 'coach1' || action === 'coach2') {
+        handleSpecialSessionToggle(action.at(-1));
+      } else if (action === 'previous' || action === 'next') {
         if (specialSessionContext) {
           setSessions(specialSessionContext.allSessions);
           setCurrentSessionIndex(specialSessionContext.index);
           setSpecialSessionContext(null);
-          setKey((prevKey) => prevKey + 1);
         } else {
-          // Otherwise, navigate normally
-          if (event.key === config.previousSession) {
-            handlePreviousSession();
-          } else {
-            handleNextSession();
-          }
+          if (sessions.length < 2) return;
+          const step = action === 'next' ? 1 : -1;
+          setCurrentSessionIndex(index => (index + step + sessions.length) % sessions.length);
         }
+        setKey(key => key + 1);
       }
     };
-    
 
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [specialSessionContext, sessions, currentSessionIndex]);
-  
-  // Disable previous/next session when in a special session
-  const handlePreviousSession = () => {
-    if (!specialSessionContext && sessions.length > 1) {
-      setCurrentSessionIndex((prevIndex) =>
-        prevIndex === 0 ? sessions.length - 1 : prevIndex - 1
-      );
-      setKey((prevKey) => prevKey + 1);
-    }
-  };
-
-  const handleNextSession = () => {
-    if (!specialSessionContext && sessions.length > 1) {
-      setCurrentSessionIndex((prevIndex) =>
-        (prevIndex + 1) % sessions.length
-      );
-      setKey((prevKey) => prevKey + 1);
-    }
-  };
+  }, [specialSessionContext, sessions, currentSessionIndex, isModalOpen]);
 
   const session = sessions[currentSessionIndex];
 
@@ -186,14 +154,12 @@ function App() {
     <div>
       <Screen 
         key={key}
-        config={config}
+        shortcutsDisabled={isModalOpen}
         session={{
           ...session,
           label1: session.label1 || "正方",
           label2: session.label2 || "反方"
         }}
-        onPreviousSession={handlePreviousSession}
-        onNextSession={handleNextSession}
         setIsModalOpen={setIsModalOpen}
         settings={settings}
       />

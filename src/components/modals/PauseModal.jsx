@@ -1,7 +1,7 @@
 import { ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import PropTypes from "prop-types";
 
-const PauseModal = ({ isOpen, onClose }) => {
+const PauseModal = ({ isOpen }) => {
   if (!isOpen) return null;
 
   return (
@@ -18,7 +18,6 @@ const PauseModal = ({ isOpen, onClose }) => {
 
 PauseModal.propTypes = {
   isOpen: PropTypes.bool.isRequired,
-  onClose: PropTypes.func.isRequired,
 };
 
 export default PauseModal;

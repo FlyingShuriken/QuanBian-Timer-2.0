@@ -1,12 +1,12 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import PropTypes from "prop-types";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTimers } from "../hooks/useTimers";
-import useKeyboardShortcut from "../hooks/utils/useKeyboardShortcut";
+import { matchShortcut } from "../timer/shortcuts.mjs";
 import Timer from "./Timer";
 import PauseModal from "./modals/PauseModal";
 
-function Screen({ config, session, onPreviousSession, onNextSession, setIsModalOpen, settings }) {
+function Screen({ shortcutsDisabled, session, setIsModalOpen, settings }) {
   const [isPaused, setIsPaused] = useState(false);
 
   const {
@@ -22,15 +22,24 @@ function Screen({ config, session, onPreviousSession, onNextSession, setIsModalO
     pauseTimers,
   } = useTimers(session);
 
-  useKeyboardShortcut(config.primaryTimerToggle, togglePrimaryTimer);
-  useKeyboardShortcut(config.secondaryTimerToggle, toggleSecondaryTimer);
-  useKeyboardShortcut(config.restart, restartTimers);
-  useKeyboardShortcut(config.pause, () => {
-    pauseTimers();
-    setIsPaused((prev) => !prev);
-  });
-  useKeyboardShortcut(config.previousSession, onPreviousSession);
-  useKeyboardShortcut(config.nextSession, onNextSession);
+  useEffect(() => {
+    if (shortcutsDisabled) return;
+    const onKey = (event) => {
+      const action = matchShortcut(event);
+      if (action === 'pause') {
+        pauseTimers();
+        setIsPaused(paused => !paused);
+      } else if (action === 'reset') {
+        restartTimers();
+      } else if (!isPaused && action === 'primary') {
+        togglePrimaryTimer();
+      } else if (!isPaused && action === 'secondary' && session.isDualTimer) {
+        toggleSecondaryTimer();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isPaused, pauseTimers, restartTimers, session.isDualTimer, shortcutsDisabled, togglePrimaryTimer, toggleSecondaryTimer]);
 
   // Get title style for non-dual timers
   const getTitleStyle = () => {
@@ -154,20 +163,13 @@ function Screen({ config, session, onPreviousSession, onNextSession, setIsModalO
         </>
       )}
   
-      {isPaused && <PauseModal isOpen={isPaused} onClose={pauseTimers} />}
+      {isPaused && <PauseModal isOpen={isPaused} />}
     </div>
   );
 }
 
 Screen.propTypes = {
-  config: PropTypes.shape({
-    primaryTimerToggle: PropTypes.string.isRequired,
-    secondaryTimerToggle: PropTypes.string.isRequired,
-    restart: PropTypes.string.isRequired,
-    pause: PropTypes.string.isRequired,
-    previousSession: PropTypes.string.isRequired,
-    nextSession: PropTypes.string.isRequired,
-  }).isRequired,
+  shortcutsDisabled: PropTypes.bool.isRequired,
   session: PropTypes.shape({
     isDualTimer: PropTypes.bool.isRequired,
     duration: PropTypes.number.isRequired,
@@ -175,8 +177,6 @@ Screen.propTypes = {
     label2: PropTypes.string,
     title: PropTypes.string.isRequired,
   }).isRequired,
-  onPreviousSession: PropTypes.func.isRequired,
-  onNextSession: PropTypes.func.isRequired,
   setIsModalOpen: PropTypes.func.isRequired,
   settings: PropTypes.object.isRequired,
 };
