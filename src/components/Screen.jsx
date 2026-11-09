@@ -1,21 +1,10 @@
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { Cog6ToothIcon } from '@heroicons/react/24/outline';
 import PropTypes from "prop-types";
-import { useEffect } from "react";
-import { useTimers } from "../hooks/useTimers";
-import { matchShortcut } from "../timer/shortcuts.mjs";
 import Timer from "./Timer";
 import PauseModal from "./modals/PauseModal";
 
-function Screen({ shortcutsDisabled, session, setIsModalOpen, settings }) {
-  const { remainingMs, running, paused, command } = useTimers(session);
+function Screen({ session, remainingMs, running, paused, setIsModalOpen, settings }) {
   const [primary, secondary = 0] = remainingMs.map(ms => Math.ceil(ms / 1000));
-
-  useEffect(() => {
-    if (shortcutsDisabled) return;
-    const onKey = (event) => command(matchShortcut(event));
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [command, shortcutsDisabled]);
 
   // Get title style for non-dual timers
   const getTitleStyle = () => {
@@ -90,8 +79,8 @@ function Screen({ shortcutsDisabled, session, setIsModalOpen, settings }) {
     
     >
       <div className="absolute top-4 right-4">
-        <button onClick={() => setIsModalOpen(true)}>
-          <FontAwesomeIcon icon="cog" className="text-gray-400 hover:text-gray-800 transition-colors text-3xl" />
+        <button aria-label="设定" onClick={() => setIsModalOpen(true)}>
+          <Cog6ToothIcon className="size-8 text-gray-400 hover:text-gray-800" />
         </button>
       </div>
   
@@ -141,7 +130,9 @@ function Screen({ shortcutsDisabled, session, setIsModalOpen, settings }) {
 }
 
 Screen.propTypes = {
-  shortcutsDisabled: PropTypes.bool.isRequired,
+  remainingMs: PropTypes.arrayOf(PropTypes.number).isRequired,
+  running: PropTypes.number,
+  paused: PropTypes.bool.isRequired,
   session: PropTypes.shape({
     isDualTimer: PropTypes.bool.isRequired,
     duration: PropTypes.number.isRequired,
